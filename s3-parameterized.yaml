@@ -1,0 +1,239 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Create an S3 bucket with server access logging, lifecycle rules, CloudTrail data events, and event notifications.
+
+Parameters:
+  S3BucketName:
+    Type: String
+    Description: Name of the S3 bucket to create
+
+  BucketLogsPrefix:
+    Type: String
+    Default: logs/
+    Description: Prefix for log files in the log bucket
+
+  LifecycleTransitionDays:
+    Type: Number
+    Default: 30
+    Description: Number of days after object creation to transition to STANDARD_IA storage class
+
+  # NotificationEventSuffix:
+  #   Type: String
+  #   Default: .jpg
+  #   Description: Suffix for object keys to trigger event notifications
+
+  # AccountId:
+  #   Type: String
+  #   Default: "609057396756"
+  #   Description: AWS Account ID that needs access to publish to the SNS topic
+
+  # Email:
+  #   Type: String
+  #   Default: "david.oyebanji@bakertilly.com"
+  #   Description: Email address to receive SNS notifications
+
+  BucketVersioningEnabled:
+    Type: String
+    Default: Disable
+    AllowedValues:
+      - Enable
+      - Disable
+    Description: Enable or disable versioning for the S3 bucket
+
+  EnableServerSideEncryption:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable or disable server-side encryption with Amazon S3 managed keys (SSE-S3)
+
+  EnableAccessLogging:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable or disable access logging for the S3 bucket
+
+  # EnableEventNotifications:
+  #   Type: String
+  #   Default: 'true'
+  #   AllowedValues:
+  #     - 'true'
+  #     - 'false'
+  #   Description: Enable or disable event notifications for the S3 bucket
+
+  # EnableCloudTrailDataEvents:
+  #   Type: String
+  #   Default: 'true'
+  #   AllowedValues:
+  #     - 'true'
+  #     - 'false'
+  #   Description: Enable or disable CloudTrail data events for the S3 bucket
+
+
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3BucketName
+      AccessControl: Private
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: !If [ShouldEnableServerSideEncryption, 'AES256', 'aws:kms']
+      # VersioningConfiguration:
+      #   Status: !If [ShouldEnableVersioning, 'Enabled', 'Suspended']
+      LoggingConfiguration:
+        DestinationBucketName: !If [ShouldEnableAccessLogging, !Ref LogBucket, !Ref 'AWS::NoValue']
+        LogFilePrefix: !Ref BucketLogsPrefix
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToStandardIA
+            Status: Enabled
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: !Ref LifecycleTransitionDays
+      # NotificationConfiguration:
+      #   TopicConfigurations:
+      #     - Topic: !If [ShouldEnableEventNotifications, !Ref SNSTopic, !Ref 'AWS::NoValue']
+      #       Event: 's3:ObjectCreated:*'
+      #       Filter:
+      #         S3Key:
+      #           Rules:
+      #             - Name: suffix
+      #               Value: !Ref NotificationEventSuffix
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  LogBucket:
+    Type: AWS::S3::Bucket
+    Condition: ShouldEnableAccessLogging
+    Properties:
+      BucketName: !Sub '${S3BucketName}-logs'
+      VersioningConfiguration:
+        Status: Enabled
+
+  # SNSTopic:
+  #   Type: AWS::SNS::Topic
+  #   Condition: ShouldEnableEventNotifications
+  #   Properties:
+  #     TopicName: !Sub '${S3BucketName}-topic'
+  #     Subscription:
+  #       - Endpoint: !Ref Email
+  #         Protocol: email
+
+  # SNSTopicPolicy:
+  #   Type: AWS::SNS::TopicPolicy
+  #   Condition: ShouldEnableEventNotifications
+  #   Properties:
+  #     PolicyDocument:
+  #       Version: '2012-10-17'
+  #       Statement:
+  #         - Effect: Allow
+  #           Principal:
+  #             AWS: !Ref AccountId
+  #           Action: 'sns:Publish'
+  #           Resource: !Ref SNSTopic
+  #         - Sid: AllowServices
+  #           Effect: Allow
+  #           Principal:
+  #             Service:
+  #               - s3.amazonaws.com
+  #           Action: 'sns:Publish'
+  #           Resource: !Ref SNSTopic
+  #     Topics:
+  #       - !Ref SNSTopic
+
+  # EventBridgeRule:
+  #   Type: AWS::Events::Rule
+  #   Condition: ShouldEnableEventNotifications
+  #   Properties:
+  #     EventPattern:
+  #       source:
+  #         - aws.s3
+  #       detail-type:
+  #         - Object Created
+  #       detail:
+  #         bucket:
+  #           name:
+  #             - !Ref S3BucketName
+  #         object:
+  #           key:
+  #             suffix:
+  #               - !Ref NotificationEventSuffix
+  #     State: ENABLED
+  #     Targets:
+  #       - Arn: !Ref SNSTopic
+  #         Id: SNSTarget
+
+  # CloudTrailBucketPolicy:
+  #   Type: AWS::S3::BucketPolicy
+  #   Condition: ShouldEnableCloudTrailDataEvents
+  #   Properties:
+  #     Bucket: !Ref S3Bucket
+  #     PolicyDocument:
+  #       Version: '2012-10-17'
+  #       Statement:
+  #         - Sid: AWSCloudTrailAclCheck
+  #           Effect: Allow
+  #           Principal:
+  #             Service: cloudtrail.amazonaws.com
+  #           Action: s3:GetBucketAcl
+  #           Resource: !GetAtt S3Bucket.Arn
+  #         - Sid: AWSCloudTrailWrite
+  #           Effect: Allow
+  #           Principal:
+  #             Service: cloudtrail.amazonaws.com
+  #           Action: s3:PutObject
+  #           Resource: !Sub '${S3Bucket.Arn}/AWSLogs/${AWS::AccountId}/*'
+  #           Condition:
+  #             StringEquals:
+  #               s3:x-amz-acl: bucket-owner-full-control
+  #         - Sid: AWSCloudTrailListBucket
+  #           Effect: Allow
+  #           Principal:
+  #             Service: cloudtrail.amazonaws.com
+  #           Action: s3:ListBucket
+  #           Resource: !GetAtt S3Bucket.Arn
+  #           Condition:
+  #             StringLike:
+  #               s3:prefix:
+  #                 - 'AWSLogs/${AWS::AccountId}/*'
+
+  # CloudTrailTrail:
+  #   Type: AWS::CloudTrail::Trail
+  #   Properties:
+  #     S3BucketName: !Ref S3Bucket
+  #     IsMultiRegionTrail: true
+  #     EnableLogFileValidation: true
+  #     IsOrganizationTrail: false
+  #     IsLogging: false
+  #     IncludeGlobalServiceEvents: true
+  #     EventSelectors:
+  #       - DataResources:
+  #           - Type: AWS::S3::Object
+  #             Values:
+  #               - !Sub '${S3Bucket.Arn}/'
+  #         IncludeManagementEvents: true
+  #         ReadWriteType: All
+
+
+Outputs:
+  S3BucketName:
+    Value: !Ref S3Bucket
+    Description: Name of the S3 bucket
+  # LogBucketName:
+  #   Value: !If [ShouldEnableAccessLogging, !Ref LogBucket, 'Access logging is disabled']
+  #   Description: Name of the log bucket
+  # SNSTopcArn:
+  #   Value: !If [ShouldEnableEventNotifications, !Ref SNSTopic, 'Event notifications are disabled']
+  #   Description: ARN of the SNS topic
+Conditions:
+    ShouldEnableServerSideEncryption: !Equals [!Ref EnableServerSideEncryption, 'true']
+    ShouldEnableAccessLogging: !Equals [!Ref EnableAccessLogging, 'true']
+    # ShouldEnableEventNotifications: !Equals [!Ref EnableEventNotifications, 'true']
+    # ShouldEnableCloudTrailDataEvents: !Equals [!Ref EnableCloudTrailDataEvents, 'true']
