@@ -24,6 +24,13 @@ Parameters:
     Type: String
     Default: "david.oyebanji@bakertilly.com"
     Description: Email address to receive SNS notifications
+  BucketVersioningEnabled:
+    Type: String
+    Default: Disable
+    AllowedValues:
+      - Enable
+      - Disable
+    Description: Enable or disable versioning for the S3 bucket
 
 Resources:
   S3Bucket:
@@ -31,8 +38,12 @@ Resources:
     Properties:
       BucketName: !Ref S3BucketName
       AccessControl: Private
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
       VersioningConfiguration:
-        Status: Enabled
+        Status: !If [ShouldEnableVersioning, 'Enabled', 'Suspended']
       LoggingConfiguration:
         DestinationBucketName: !Ref LogBucket
         LogFilePrefix: !Ref BucketLogsPrefix
@@ -175,3 +186,6 @@ Outputs:
   SNSTopicArn:
     Value: !Ref SNSTopic
     Description: ARN of the SNS topic
+
+Conditions:
+  ShouldEnableVersioning: !Equals [!Ref BucketVersioningEnabled, 'Enable']
