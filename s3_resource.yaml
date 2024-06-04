@@ -18,11 +18,11 @@ Parameters:
     Description: Suffix for object keys to trigger event notifications
   AccountId:
     Type: String
-    Default: "609057396756"
+    Default: "xxxxx"
     Description: AWS Account ID that needs access to publish to the SNS topic
   Email:
     Type: String
-    Default: "david.oyebanji@bakertilly.com"
+    Default: "xxxx"
     Description: Email address to receive SNS notifications
   BucketVersioningEnabled:
     Type: String
